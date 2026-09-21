@@ -1,8 +1,9 @@
 from flask import Flask, render_template, request, redirect, url_for, session
 from werkzeug.security import generate_password_hash, check_password_hash
 from dotenv import load_dotenv
+from decimal import Decimal
 import os
-import sqlite3
+import psycopg
 load_dotenv()
 
 app = Flask(__name__)
@@ -10,7 +11,13 @@ app = Flask(__name__)
 # secret key is required by flask to encrypt session cookies (keep users logged in safely)
 app.secret_key = os.getenv("SECRET_KEY")
 def get_db_connection():
-    conn = sqlite3.connect("expenses.db")
+    conn = psycopg.connect(
+        host=os.getenv("DB_HOST"),
+        port=os.getenv("DB_PORT"),
+        dbname=os.getenv("DB_NAME"),
+        user=os.getenv("DB_USER"),
+        password=os.getenv("DB_PASSWORD")
+    )
     return conn
 
 # --- AUTHENTICATION ROUTES ---
@@ -24,16 +31,16 @@ def register():
         # Encrypt the raw password into a secure hash
         hashed_password = generate_password_hash(password)
         
-        conn = sqlite3.connect('expenses.db')
+        conn = get_db_connection()
         cursor = conn.cursor()
         
         try:
-            cursor.execute("INSERT INTO users (username, password) VALUES (?, ?)", (username, hashed_password))
+            cursor.execute("INSERT INTO users (username, password) VALUES (%s, %s)", (username, hashed_password))
             conn.commit()
             conn.close()
             # Redirect to login page after successful registration
             return redirect(url_for('login'))
-        except sqlite3.IntegrityError:
+        except psycopg.errors.UniqueViolation:
             # Triggered if the username already exists in SQLite
             conn.close()
             return render_template('register.html', error="Username already exists! Choose another.")
@@ -47,9 +54,9 @@ def login():
         username = request.form['username'].strip()
         password = request.form['password']
         
-        conn = sqlite3.connect('expenses.db')
+        conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM users WHERE username = ?", (username,))
+        cursor.execute("SELECT * FROM users WHERE username = %s", (username,))
         user = cursor.fetchone()
         conn.close()
         
@@ -81,34 +88,46 @@ def index():
     selected_month = request.args.get('month', '')
     
     try:
-        budget_limit = float(request.args.get('budget', 10000))
+        budget_limit = Decimal(request.args.get('budget', 10000))
     except ValueError:
-        budget_limit = 10000.0
+        budget_limit = Decimal("10000.00")
 
     conn = get_db_connection()
     cursor = conn.cursor()
 
     # 2. Fetch months filtered by logged-in user
     cursor.execute("""
-        SELECT DISTINCT strftime('%Y-%m', date) 
-        FROM expenses 
-        WHERE user_id = ? AND date IS NOT NULL 
-        ORDER BY strftime('%Y-%m', date) DESC
-    """, (user_id,))
+    SELECT DISTINCT TO_CHAR(date, 'YYYY-MM')
+    FROM expenses
+    WHERE user_id = %s AND date IS NOT NULL
+    ORDER BY TO_CHAR(date, 'YYYY-MM') DESC
+""", (user_id,))
     available_months = [row[0] for row in cursor.fetchall() if row[0]]
 
     # 3. Fetch expenses filtered by logged-in user
     if selected_month:
-        cursor.execute("SELECT * FROM expenses WHERE user_id = ? AND strftime('%Y-%m', date) = ? ORDER BY date DESC, id DESC", (user_id, selected_month))
+        cursor.execute(
+    "SELECT * FROM expenses WHERE user_id = %s AND TO_CHAR(date, 'YYYY-MM') = %s ORDER BY date DESC, id DESC",
+    (user_id, selected_month)
+)
         expenses = cursor.fetchall()
 
-        cursor.execute("SELECT category, SUM(amount) FROM expenses WHERE user_id = ? AND strftime('%Y-%m', date) = ? GROUP BY category", (user_id, selected_month))
+        cursor.execute(
+    "SELECT category, SUM(amount) FROM expenses WHERE user_id = %s AND TO_CHAR(date, 'YYYY-MM') = %s GROUP BY category",
+    (user_id, selected_month)
+)
         category_data = cursor.fetchall()
     else:
-        cursor.execute("SELECT * FROM expenses WHERE user_id = ? ORDER BY date DESC, id DESC", (user_id,))
+        cursor.execute(
+    "SELECT * FROM expenses WHERE user_id = %s ORDER BY date DESC, id DESC",
+    (user_id,)
+)
         expenses = cursor.fetchall()
 
-        cursor.execute("SELECT category, SUM(amount) FROM expenses WHERE user_id = ? GROUP BY category", (user_id,))
+        cursor.execute(
+    "SELECT category, SUM(amount) FROM expenses WHERE user_id = %s GROUP BY category",
+    (user_id,)
+)
         category_data = cursor.fetchall()
 
     # Note: expense[2] is amount because column 1 is user_id now
@@ -162,7 +181,7 @@ def add_expense():
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute(
-        "INSERT INTO expenses (user_id, amount, category, description, date) VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO expenses (user_id, amount, category, description, date) VALUES (%s, %s, %s, %s, %s)",
         (user_id, amount, category, description, date)
     )
     conn.commit()
@@ -179,7 +198,10 @@ def delete_expense(id):
     conn = get_db_connection()
     cursor = conn.cursor()
     # Ensure user can only delete their own items
-    cursor.execute("DELETE FROM expenses WHERE id = ? AND user_id = ?", (id, session['user_id']))
+    cursor.execute(
+    "DELETE FROM expenses WHERE id = %s AND user_id = %s",
+    (id, session['user_id'])
+)
     conn.commit()
     conn.close()
     return redirect(url_for("index"))
