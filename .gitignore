@@ -1,0 +1,18 @@
+# Environment variables and secrets
+.env
+
+# Python virtual environment
+.venv/
+
+# Local SQLite database
+expenses.db
+
+# Project archives
+*.zip
+
+# Python cache files
+__pycache__/
+*.py[cod]
+
+# VS Code settings
+.vscode/
