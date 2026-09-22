@@ -2,6 +2,10 @@
 
 A Flask-based personal expense tracker that allows users to securely register, log in, manage expenses, track budgets, and analyze spending by category and month.
 
+## Live Demo
+
+[Expense Tracker — Live Demo](https://expense-tracker-4whn.onrender.com)
+
 ## Features
 
 - User registration and login
