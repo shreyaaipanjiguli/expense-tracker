@@ -17,14 +17,14 @@ A Flask-based personal expense tracker that allows users to securely register, l
 - Budget usage indicator
 - Category-wise expense analysis
 - Total spending and average expense calculation
-- SQLite database for local data storage
+- PostgreSQL database for persistent data storage
 - Environment-based configuration using `.env`
 
 ## Tech Stack
 
 - **Backend:** Python, Flask
 - **Frontend:** HTML, CSS
-- **Database:** SQLite
+- **Database:** PostgreSQL
 - **Authentication:** Flask sessions + Werkzeug password hashing
 - **Configuration:** python-dotenv
 
